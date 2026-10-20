@@ -1,0 +1,21 @@
+{
+  "expo": {
+    "name": "ClassVault",
+    "slug": "classvault",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "backgroundColor": "#080F25"
+    },
+    "android": {
+      "package": "com.classvault.studentapp"
+    },
+    "ios": {
+      "bundleIdentifier": "com.classvault.studentapp"
+    },
+    "plugins": [
+      "expo-status-bar"
+    ]
+  }
+}
