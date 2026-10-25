@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -19,12 +19,20 @@ import {
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
+import type { Session } from "@supabase/supabase-js";
+import { AuthScreen } from "./components/AuthScreen";
+import { ApiError, classVaultApi, type ApiGroup, type ApiMaterial, type ApiMessage } from "./lib/api";
+import { supabase } from "./lib/supabase";
 
 type Role = "Student" | "Rep" | "Staff";
 type MaterialType = "PDF" | "PPT" | "YouTube" | "Zoom" | "Text";
 type Tab = "My Classes" | "Recent" | "Important";
 type GroupType = "Subject Group" | "Class Group" | "General Group";
 type GroupManagementView = "menu" | "create" | "invite" | "join";
+type SupabaseStatus =
+  | { state: "checking" }
+  | { state: "connected" }
+  | { state: "error"; message: string };
 
 type Message = {
   id: string;
@@ -66,344 +74,20 @@ type Group = {
   inviteLink: string;
   messages: Message[];
   materials: Material[];
+  members?: { name: string; role: Role }[];
+  currentRole?: Role;
 };
-
-const groups: Group[] = [
-  {
-    id: "python",
-    name: "Python",
-    code: "BCA • Subject",
-    icon: "code-slash",
-    color: "#438BFF",
-    description: "Python lab programs, notes, and quick practice updates.",
-    summary: "Python notes and lab programs",
-    memberCount: 58,
-    repNames: ["A. Meera"],
-    staffNames: ["Mrs. Nithya", "Mr. David"],
-    inviteLink: "https://classvault.demo/invite/python",
-    messages: [
-      {
-        id: "p1",
-        author: "A. Meera",
-        role: "Rep",
-        text: "Updated the list of Python exercises for this week. Please submit the output screenshot before Friday.",
-        createdAt: "Today, 10:24 AM",
-        expiresAt: "24h from now",
-        isPinned: true,
-        isImportant: true,
-        preservedBy: "Staff review"
-      },
-      {
-        id: "p2",
-        author: "R. Karthik",
-        role: "Student",
-        text: "I am stuck on the nested loop lab. Can someone share a sample answer?",
-        createdAt: "Yesterday, 8:45 PM",
-        expiresAt: "expired by demo",
-        isImportant: false,
-        preservedBy: undefined
-      },
-      {
-        id: "p3",
-        author: "Mrs. Nithya",
-        role: "Staff",
-        text: "Keep all strings in single quotes for the first lab, and use proper indentation in Python.",
-        createdAt: "Yesterday, 3:10 PM",
-        expiresAt: "semester",
-        isPinned: true,
-        isImportant: true,
-        preservedBy: "Staff pinned"
-      }
-    ],
-    materials: [
-      { id: "m1", title: "Python Unit 3 Notes", type: "PDF", url: "https://example.com/python-unit-3.pdf", uploadedBy: "Mrs. Nithya", postedAt: "Sep 14, 2025", semesterRetention: "Semester 3" },
-      { id: "m2", title: "Loop Practice Video", type: "YouTube", url: "https://www.youtube.com/watch?v=abc123", uploadedBy: "Mr. David", postedAt: "Sep 11, 2025", semesterRetention: "Semester 3" },
-      { id: "m3", title: "Lab 4 Instructions", type: "Text", url: "https://example.com/lab-4.html", uploadedBy: "A. Meera", postedAt: "Sep 8, 2025", semesterRetention: "Semester 3" }
-    ]
-  },
-  {
-    id: "tamil",
-    name: "Tamil",
-    code: "BCA • Subject",
-    icon: "book",
-    color: "#9A5BFF",
-    description: "Language practice, grammar notes, and class announcements.",
-    summary: "Class materials and announcements",
-    memberCount: 51,
-    repNames: ["S. Kavitha"],
-    staffNames: ["Dr. Elango"],
-    inviteLink: "https://classvault.demo/invite/tamil",
-    messages: [
-      {
-        id: "t1",
-        author: "Dr. Elango",
-        role: "Staff",
-        text: "The essay writing format and key vocabulary list are attached below for revision.",
-        createdAt: "Today, 9:10 AM",
-        expiresAt: "semester",
-        isPinned: true,
-        isImportant: true,
-        preservedBy: "Staff pinned"
-      },
-      {
-        id: "t2",
-        author: "S. Kavitha",
-        role: "Rep",
-        text: "Please check the grammar worksheet before the next class. The deadline is tomorrow.",
-        createdAt: "Yesterday, 12:35 PM",
-        expiresAt: "24h from now",
-        isImportant: true
-      },
-      {
-        id: "t3",
-        author: "M. Raja",
-        role: "Student",
-        text: "Can someone share the poem summary notes? I missed class yesterday.",
-        createdAt: "Mon, 7:20 PM",
-        expiresAt: "expired by demo",
-      }
-    ],
-    materials: [
-      { id: "tm1", title: "Poem Summary Sheet", type: "PDF", url: "https://example.com/tamil-poem-summary.pdf", uploadedBy: "Dr. Elango", postedAt: "Sep 10, 2025", semesterRetention: "Semester 3" },
-      { id: "tm2", title: "Grammar Quiz Link", type: "Text", url: "https://example.com/tamil-grammar-quiz", uploadedBy: "S. Kavitha", postedAt: "Sep 7, 2025", semesterRetention: "Semester 3" }
-    ]
-  },
-  {
-    id: "english",
-    name: "English",
-    code: "BCA • Subject",
-    icon: "library",
-    color: "#F05D9B",
-    description: "Communication notes, writing practice, and speaking activities.",
-    summary: "Unit notes and important questions",
-    memberCount: 54,
-    repNames: ["K. Harini"],
-    staffNames: ["Ms. Asha"],
-    inviteLink: "https://classvault.demo/invite/english",
-    messages: [
-      {
-        id: "e1",
-        author: "Ms. Asha",
-        role: "Staff",
-        text: "Bring your speaking notes for the presentation practice. The rubric remains the same.",
-        createdAt: "Today, 8:50 AM",
-        expiresAt: "semester",
-        isPinned: true,
-        preservedBy: "Staff pinned"
-      },
-      {
-        id: "e2",
-        author: "K. Harini",
-        role: "Rep",
-        text: "Important questions for Unit 4 are attached in the materials section.",
-        createdAt: "Mon, 2:15 PM",
-        expiresAt: "24h from now",
-        isImportant: true
-      },
-      {
-        id: "e3",
-        author: "N. Anu",
-        role: "Student",
-        text: "Can somebody share the short story summary? I missed the class yesterday.",
-        createdAt: "Sun, 4:20 PM",
-        expiresAt: "expired by demo",
-      }
-    ],
-    materials: [
-      { id: "em1", title: "Presentation Rubric", type: "PDF", url: "https://example.com/english-rubric.pdf", uploadedBy: "Ms. Asha", postedAt: "Sep 12, 2025", semesterRetention: "Semester 3" },
-      { id: "em2", title: "Unit 4 Important Questions", type: "PPT", url: "https://example.com/unit4-questions.pptx", uploadedBy: "K. Harini", postedAt: "Sep 9, 2025", semesterRetention: "Semester 3" }
-    ]
-  },
-  {
-    id: "professional-english",
-    name: "Professional English",
-    code: "BCA • Subject",
-    icon: "chatbubbles",
-    color: "#11B89A",
-    description: "Business communication, vocabulary, interviews, and presentation skills.",
-    summary: "Presentation and communication notes",
-    memberCount: 45,
-    repNames: ["P. Vishnu"],
-    staffNames: ["Mrs. Leena"],
-    inviteLink: "https://classvault.demo/invite/professional-english",
-    messages: [
-      {
-        id: "pe1",
-        author: "Mrs. Leena",
-        role: "Staff",
-        text: "Your mock interview groups are ready. Please prepare a five-minute self-introduction.",
-        createdAt: "Today, 9:55 AM",
-        expiresAt: "semester",
-        isImportant: true,
-        preservedBy: "Staff pinned"
-      },
-      {
-        id: "pe2",
-        author: "P. Vishnu",
-        role: "Rep",
-        text: "The email writing sample is pinned for quick revision before the unit test.",
-        createdAt: "Yesterday, 11:40 AM",
-        expiresAt: "24h from now",
-        isPinned: true,
-        isImportant: true
-      },
-      {
-        id: "pe3",
-        author: "D. Sanjay",
-        role: "Student",
-        text: "I posted a sample email cover earlier; are we allowed to reuse the template?",
-        createdAt: "Sat, 5:05 PM",
-        expiresAt: "expired by demo",
-      }
-    ],
-    materials: [
-      { id: "pem1", title: "Mock Interview Guide", type: "PDF", url: "https://example.com/mock-interview-guide.pdf", uploadedBy: "Mrs. Leena", postedAt: "Sep 13, 2025", semesterRetention: "Semester 3" },
-      { id: "pem2", title: "Email Writing Examples", type: "Text", url: "https://example.com/email-writing-examples", uploadedBy: "P. Vishnu", postedAt: "Sep 6, 2025", semesterRetention: "Semester 3" }
-    ]
-  },
-  {
-    id: "cap",
-    name: "CAP",
-    code: "BCA • Subject",
-    icon: "laptop",
-    color: "#F59E0B",
-    description: "Computer applications and practical training in software basics.",
-    summary: "Latest class update",
-    memberCount: 60,
-    repNames: ["T. Naveen"],
-    staffNames: ["Mr. Senthil"],
-    inviteLink: "https://classvault.demo/invite/cap",
-    messages: [
-      {
-        id: "c1",
-        author: "Mr. Senthil",
-        role: "Staff",
-        text: "Today’s practical file is updated and available in the materials section. Please submit by next week.",
-        createdAt: "Today, 7:15 AM",
-        expiresAt: "semester",
-        isImportant: true,
-        preservedBy: "Staff pinned"
-      },
-      {
-        id: "c2",
-        author: "T. Naveen",
-        role: "Rep",
-        text: "The desktop shortcut exercise has been updated. Please check the lab file and the screenshots.",
-        createdAt: "Mon, 9:15 AM",
-        expiresAt: "24h from now",
-        isPinned: true,
-      },
-      {
-        id: "c3",
-        author: "V. Priya",
-        role: "Student",
-        text: "I uploaded the screenshot of the first task but I still need help with the final step.",
-        createdAt: "Sun, 10:40 PM",
-        expiresAt: "expired by demo",
-      }
-    ],
-    materials: [
-      { id: "cm1", title: "CAP Practical File", type: "PDF", url: "https://example.com/cap-practical-file.pdf", uploadedBy: "Mr. Senthil", postedAt: "Sep 12, 2025", semesterRetention: "Semester 3" },
-      { id: "cm2", title: "Shortcut Exercise Demo", type: "Zoom", url: "https://zoom.us/j/1234567890", uploadedBy: "T. Naveen", postedAt: "Sep 8, 2025", semesterRetention: "Semester 3" }
-    ]
-  },
-  {
-    id: "ecommerce",
-    name: "E-Commerce",
-    code: "BCA • Subject",
-    icon: "cart",
-    color: "#EF7445",
-    description: "Digital business concepts, sales models, and online marketing case studies.",
-    summary: "PPT and study materials",
-    memberCount: 50,
-    repNames: ["J. Fathima"],
-    staffNames: ["Mrs. Gayathri"],
-    inviteLink: "https://classvault.demo/invite/ecommerce",
-    messages: [
-      {
-        id: "ecom1",
-        author: "Mrs. Gayathri",
-        role: "Staff",
-        text: "Use the online marketplace case study to compare the payment models discussed in class.",
-        createdAt: "Today, 11:20 AM",
-        expiresAt: "semester",
-        isPinned: true,
-        preservedBy: "Staff pinned"
-      },
-      {
-        id: "ecom2",
-        author: "J. Fathima",
-        role: "Rep",
-        text: "The case study summary is ready and the quiz answer key is available in the notes section.",
-        createdAt: "Sun, 6:05 PM",
-        expiresAt: "24h from now",
-        isImportant: true
-      },
-      {
-        id: "ecom3",
-        author: "R. Siva",
-        role: "Student",
-        text: "Can someone explain the difference between B2B and B2C in one line?",
-        createdAt: "Fri, 9:30 PM",
-        expiresAt: "expired by demo",
-      }
-    ],
-    materials: [
-      { id: "ecm1", title: "E-Commerce Case Study", type: "PPT", url: "https://example.com/ecommerce-case-study.pptx", uploadedBy: "Mrs. Gayathri", postedAt: "Sep 15, 2025", semesterRetention: "Semester 3" },
-      { id: "ecm2", title: "Market Model Notes", type: "PDF", url: "https://example.com/market-model-notes.pdf", uploadedBy: "J. Fathima", postedAt: "Sep 9, 2025", semesterRetention: "Semester 3" }
-    ]
-  }
-];
-
-type OfficialSubject = {
-  id: string;
-  name: string;
-  shortCode: string;
-  subjectCode: string | null;
-  facultyName: string;
-  groupType: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  color: string;
-};
-
-const officialSubjects: OfficialSubject[] = [
-  { id: "english", name: "English", shortCode: "ENG", subjectCode: "23ELGE3", facultyName: "Mr. Praveen Kumar Sri", groupType: "BCA Subject", icon: "book", color: "#F05D9B" },
-  { id: "cab", name: "Computer Application in Business", shortCode: "CAB", subjectCode: "22SCCACAOB2", facultyName: "Ms. Ishwarya", groupType: "BCA Subject", icon: "laptop", color: "#438BFF" },
-  { id: "python", name: "Programming in Python", shortCode: "PYTHON", subjectCode: "22SCCCA3", facultyName: "Mr. M. Sulthan Alavudeen", groupType: "BCA Subject", icon: "code-slash", color: "#11B89A" },
-  { id: "python-lab", name: "Programming in Python Lab", shortCode: "PYTHON LAB", subjectCode: "22SCCCA3P", facultyName: "Mr. M. Sulthan Alavudeen", groupType: "Lab", icon: "flask", color: "#22A5C7" },
-  { id: "accountancy", name: "Principles of Accountancy", shortCode: "ACC", subjectCode: "22SCCACAOB1", facultyName: "Ms. D. Kanaga Durga Devi", groupType: "BCA Subject", icon: "calculator", color: "#F59E0B" },
-  { id: "tamil", name: "Tamil / Tamizhaga Varalarum Panbadum", shortCode: "TAM", subjectCode: "23LCGT3", facultyName: "Dr. N. Kalyani", groupType: "BCA Subject", icon: "library", color: "#9A5BFF" },
-  { id: "nme", name: "NME – E-Commerce", shortCode: "NME", subjectCode: "22SNMEVC1", facultyName: "Mr. S. P. Kirthivasan", groupType: "BCA Subject", icon: "cart", color: "#EF7445" },
-  { id: "professional-english", name: "Professional English for Physical Science-II", shortCode: "PE", subjectCode: "22PELPS2", facultyName: "Dr. A. Devi", groupType: "BCA Subject", icon: "chatbubbles", color: "#7557FF" },
-  { id: "cdc", name: "CDC", shortCode: "CDC", subjectCode: null, facultyName: "CDC Staff", groupType: "CDC", icon: "people", color: "#607D9F" },
-];
-
-const officialGroups: Group[] = officialSubjects.map((subject) => {
-  const sourceId = subject.id === "cab" ? "cap" : subject.id === "nme" ? "ecommerce" : subject.id;
-  const sourceGroup = groups.find((group) => group.id === sourceId);
-  return {
-    id: subject.id,
-    name: subject.name,
-    code: subject.subjectCode ?? "Not provided",
-    shortCode: subject.shortCode,
-    subjectCode: subject.subjectCode,
-    facultyName: subject.facultyName,
-    groupType: subject.groupType,
-    icon: subject.icon,
-    color: subject.color,
-    description: `${subject.groupType} for II BCA • Odd Semester 2026–2027`,
-    summary: subject.groupType,
-    memberCount: sourceGroup?.memberCount ?? 0,
-    repNames: sourceGroup?.repNames ?? [],
-    staffNames: [subject.facultyName],
-    inviteLink: sourceGroup?.inviteLink ?? `https://classvault.demo/invite/${subject.id}`,
-    messages: sourceGroup?.messages ?? [],
-    materials: sourceGroup?.materials ?? [],
-  };
-});
 
 type TimetableDay = 1 | 2 | 3 | 4 | 5 | 6;
 type DailyTimetable = [string | null, string | null, string | null, string | null, string | null];
+
+type TimetableCourse = {
+  id: string;
+  shortCode: string;
+  name: string;
+  subjectCode: string | null;
+  facultyName: string;
+};
 
 const timetableDays: TimetableDay[] = [1, 2, 3, 4, 5, 6];
 
@@ -414,6 +98,18 @@ const timetablePeriods = [
   { number: "IV", start: "11:50 AM", end: "12:40 PM" },
   { number: "V", start: "12:40 PM", end: "1:30 PM" },
 ] as const;
+
+const timetableCourses: TimetableCourse[] = [
+  { id: "english", name: "English", shortCode: "ENG", subjectCode: "23ELGE3", facultyName: "Mr. Praveen Kumar Sri" },
+  { id: "cab", name: "Computer Application in Business", shortCode: "CAB", subjectCode: "22SCCACAOB2", facultyName: "Ms. Ishwarya" },
+  { id: "python", name: "Programming in Python", shortCode: "PYTHON", subjectCode: "22SCCCA3", facultyName: "Mr. M. Sulthan Alavudeen" },
+  { id: "python-lab", name: "Programming in Python Lab", shortCode: "PYTHON LAB", subjectCode: "22SCCCA3P", facultyName: "Mr. M. Sulthan Alavudeen" },
+  { id: "accountancy", name: "Principles of Accountancy", shortCode: "ACC", subjectCode: "22SCCACAOB1", facultyName: "Ms. D. Kanaga Durga Devi" },
+  { id: "tamil", name: "Tamil / Tamizhaga Varalarum Panbadum", shortCode: "TAM", subjectCode: "23LCGT3", facultyName: "Dr. N. Kalyani" },
+  { id: "nme", name: "NME – E-Commerce", shortCode: "NME", subjectCode: "22SNMEVC1", facultyName: "Mr. S. P. Kirthivasan" },
+  { id: "professional-english", name: "Professional English for Physical Science-II", shortCode: "PE", subjectCode: "22PELPS2", facultyName: "Dr. A. Devi" },
+  { id: "cdc", name: "CDC", shortCode: "CDC", subjectCode: null, facultyName: "CDC Staff" },
+];
 
 const timetableRows: Record<TimetableDay, DailyTimetable> = {
   1: ["english", "cab", "python", "python-lab", "python-lab"],
@@ -428,11 +124,101 @@ if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-const notifications = [
-  { id: "n1", title: "Python lab file updated", detail: "Mrs. Nithya shared a new PDF for Unit 3.", read: false },
-  { id: "n2", title: "Pinned post preserved", detail: "The Python Rep announcement stayed beyond 24 hours because it was marked important.", read: true },
-  { id: "n3", title: "Invite link ready", detail: "The Tamil group invite is available to share with students.", read: false }
-];
+const groupColors = ["#438BFF", "#9A5BFF", "#11B89A", "#F05D9B", "#EF7445", "#7557FF"];
+
+const groupIcons: Record<string, keyof typeof Ionicons.glyphMap> = {
+  book: "book",
+  laptop: "laptop",
+  "code-slash": "code-slash",
+  flask: "flask",
+  calculator: "calculator",
+  library: "library",
+  cart: "cart",
+  chatbubbles: "chatbubbles",
+  people: "people",
+};
+
+function displayProfile(profile: ApiMessage["profiles"] | ApiMaterial["profiles"]) {
+  const value = Array.isArray(profile) ? profile[0] : profile;
+  return value?.display_name ?? "ClassVault member";
+}
+
+function formatTimestamp(value: string | null) {
+  if (!value) return "No expiry";
+  return new Date(value).toLocaleString();
+}
+
+function toMessage(message: ApiMessage): Message {
+  const preservedProfile = message.preserved_profile;
+  return {
+    id: message.id,
+    author: displayProfile(message.profiles),
+    role: message.author_role === "rep" ? "Rep" : message.author_role === "staff" ? "Staff" : "Student",
+    text: message.body,
+    createdAt: formatTimestamp(message.created_at),
+    expiresAt: formatTimestamp(message.expires_at),
+    isPinned: message.is_pinned,
+    isImportant: message.is_important,
+    preservedBy: message.preserved_at ? displayProfile(preservedProfile) : undefined,
+  };
+}
+
+function toMaterial(material: ApiMaterial): Material {
+  const type = material.material_type === "text" ? "Text" : material.material_type.toUpperCase();
+  return {
+    id: material.id,
+    title: material.title,
+    type: type as MaterialType,
+    url: material.url,
+    uploadedBy: displayProfile(material.profiles),
+    postedAt: formatTimestamp(material.posted_at),
+    semesterRetention: material.retention_label ?? "Until removed",
+  };
+}
+
+function toGroup(group: ApiGroup, userId: string): Group {
+  const members = group.group_members ?? [];
+  const reps = members
+    .filter((member) => member.role === "rep")
+    .map((member) => (Array.isArray(member.profiles) ? member.profiles[0]?.display_name : member.profiles?.display_name) ?? "Rep");
+  const staff = members
+    .filter((member) => member.role === "staff")
+    .map((member) => (Array.isArray(member.profiles) ? member.profiles[0]?.display_name : member.profiles?.display_name) ?? "Staff");
+  const groupType =
+    group.group_type === "subject"
+      ? "Subject Group"
+      : group.group_type === "class"
+        ? "Class Group"
+        : "General Group";
+
+  return {
+    id: group.id,
+    name: group.name,
+    code: group.subject_code ?? group.short_code ?? groupType,
+    icon: groupIcons[group.icon_key ?? ""] ?? "people",
+    color: group.color_hex ?? groupColors[group.name.length % groupColors.length],
+    description: group.description ?? "",
+    summary: group.summary ?? groupType,
+    memberCount: members.length,
+    repNames: reps,
+    staffNames: staff,
+    shortCode: group.short_code ?? undefined,
+    subjectCode: group.subject_code,
+    facultyName: group.faculty_name,
+    groupType,
+    inviteLink: "",
+    messages: [],
+    materials: [],
+    members: members.map((member) => ({
+      name: (Array.isArray(member.profiles) ? member.profiles[0]?.display_name : member.profiles?.display_name) ?? "ClassVault member",
+      role: member.role === "rep" ? "Rep" : member.role === "staff" ? "Staff" : "Student",
+    })),
+    currentRole: (() => {
+      const role = members.find((member) => member.user_id === userId)?.role;
+      return role === "rep" ? "Rep" : role === "staff" ? "Staff" : "Student";
+    })(),
+  };
+}
 
 const light = {
   bg: "#F5F7FF",
@@ -446,23 +232,52 @@ const light = {
   subcard: "#F0F4FF",
   accent: "#7557FF",
   success: "#12C99A",
+  shadow: {
+    shadowColor: "#172344",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.07,
+    shadowRadius: 8,
+    elevation: 2,
+  },
 };
 
 const dark = {
-  bg: "#071126",
+  bg: "#071329",
   surface: "#0D1A35",
   card: "#0C1932",
   text: "#F4F6FF",
   muted: "#9BACD2",
   border: "#1B3157",
   search: "#102142",
-  nav: "#0A1730",
+  nav: "#071329",
   subcard: "#13264A",
   accent: "#8D7BFF",
   success: "#2CE5A7",
+  shadow: {
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 0,
+  },
 };
 
-function getMaterialTone(type: MaterialType) {
+function getMaterialTone(type: MaterialType, isDark: boolean) {
+  if (isDark) {
+    switch (type) {
+      case "PDF":
+        return { bg: "#3B242B", text: "#FFB4AB" };
+      case "PPT":
+        return { bg: "#392F1C", text: "#FFD18A" };
+      case "YouTube":
+        return { bg: "#3A2230", text: "#FF9DB8" };
+      case "Zoom":
+        return { bg: "#1D2E48", text: "#A9CCFF" };
+      default:
+        return { bg: "#18352E", text: "#8DE4B8" };
+    }
+  }
+
   switch (type) {
     case "PDF":
       return { bg: "#FDE8E8", text: "#C33B37" };
@@ -486,25 +301,122 @@ export default function App() {
 }
 
 function ClassVaultApp() {
-  const [isDark, setIsDark] = useState(true);
+  const [isDark, setIsDark] = useState(false);
+  const [supabaseStatus, setSupabaseStatus] = useState<SupabaseStatus>({ state: "checking" });
+  const [session, setSession] = useState<Session | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [groupsLoading, setGroupsLoading] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
   const [activeScreen, setActiveScreen] = useState<"Home" | "Classes">("Home");
   const [selectedDay, setSelectedDay] = useState<TimetableDay>(1);
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<Tab>("My Classes");
-  const [groupList, setGroupList] = useState<Group[]>(officialGroups);
+  const [groupList, setGroupList] = useState<Group[]>([]);
+  const [activityMessages, setActivityMessages] = useState<(ApiMessage & { groupName: string; groupColor: string })[]>([]);
+  const [recentMaterials, setRecentMaterials] = useState<(ApiMaterial & { groupName: string })[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
+  const [messageDraft, setMessageDraft] = useState("");
+  const [messageSending, setMessageSending] = useState(false);
   const [groupManagementView, setGroupManagementView] = useState<GroupManagementView | null>(null);
   const [newGroupName, setNewGroupName] = useState("");
   const [newGroupDescription, setNewGroupDescription] = useState("");
   const [newGroupType, setNewGroupType] = useState<GroupType>("Subject Group");
   const [inviteGroupId, setInviteGroupId] = useState<string | null>(null);
   const [joinValue, setJoinValue] = useState("");
+  const [inviteCode, setInviteCode] = useState<string | null>(null);
+  const [managementBusy, setManagementBusy] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const c = isDark ? dark : light;
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const isCompact = width < 390 || height < 700;
+
+  useEffect(() => {
+    if (!supabase) {
+      setSupabaseStatus({ state: "error", message: "Supabase env vars are missing." });
+      setAuthReady(true);
+      return;
+    }
+
+    let isMounted = true;
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      if (isMounted) {
+        setSession(nextSession);
+        setAuthReady(true);
+      }
+    });
+
+    supabase.auth.getSession().then(({ data, error }) => {
+      if (!isMounted) return;
+      if (error) {
+        setSupabaseStatus({ state: "error", message: error.message });
+      } else {
+        setSession(data.session);
+        setSupabaseStatus({ state: "connected" });
+      }
+      setAuthReady(true);
+    }).catch((error: unknown) => {
+      if (isMounted) {
+        setSupabaseStatus({ state: "error", message: error instanceof Error ? error.message : String(error) });
+        setAuthReady(true);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      listener.subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    const accessToken = session?.access_token;
+    if (!accessToken) {
+      setGroupList([]);
+      setActivityMessages([]);
+      setRecentMaterials([]);
+      setGroupsLoading(false);
+      return;
+    }
+
+    let isMounted = true;
+    setGroupsLoading(true);
+    setApiError(null);
+    Promise.all([classVaultApi.getGroups(accessToken), classVaultApi.getActivity(accessToken)])
+      .then(([groupResponse, activity]) => {
+        if (!isMounted) return;
+        const nextGroups = groupResponse.groups.map((group) => toGroup(group, session.user.id));
+        const names = new Map(nextGroups.map((group) => [group.id, group]));
+        setGroupList(nextGroups);
+        setActivityMessages(
+          activity.messages.map((message) => ({
+            ...message,
+            groupName: names.get(message.group_id)?.name ?? "Group",
+            groupColor: names.get(message.group_id)?.color ?? "#7557FF",
+          }))
+        );
+        setRecentMaterials(
+          activity.materials.map((material) => ({
+            ...material,
+            groupName: names.get(material.group_id)?.name ?? "Group",
+          }))
+        );
+        setSupabaseStatus({ state: "connected" });
+      })
+      .catch((error: unknown) => {
+        if (isMounted) {
+          setApiError(error instanceof ApiError ? error.message : error instanceof Error ? error.message : String(error));
+          setSupabaseStatus({ state: "error", message: "Could not load your ClassVault data." });
+        }
+      })
+      .finally(() => {
+        if (isMounted) setGroupsLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [session?.access_token]);
 
   const lowerQuery = query.trim().toLowerCase();
 
@@ -520,37 +432,45 @@ function ClassVaultApp() {
         group.summary,
         group.repNames.join(" "),
         group.staffNames.join(" "),
-        group.messages.map((m) => m.text).join(" "),
-        group.materials.map((m) => m.title).join(" "),
+        activityMessages.filter((message) => message.group_id === group.id).map((message) => message.body).join(" "),
+        recentMaterials.filter((material) => material.group_id === group.id).map((material) => material.title).join(" "),
       ].join(" ").toLowerCase();
 
       return searchableText.includes(lowerQuery);
     });
-  }, [groupList, lowerQuery]);
+  }, [activityMessages, groupList, lowerQuery, recentMaterials]);
 
   const recentPosts = useMemo(
-    () =>
-      groupList.flatMap((group) =>
-        group.messages.map((message) => ({
-          ...message,
-          groupName: group.name,
-          groupId: group.id,
-          groupColor: group.color,
-        }))
-      ),
-    [groupList]
+    () => activityMessages.map((message) => ({
+      ...toMessage(message),
+      groupName: message.groupName,
+      groupId: message.group_id,
+      groupColor: message.groupColor,
+    })),
+    [activityMessages]
   );
 
   const importantPosts = useMemo(
     () =>
-      recentPosts.filter(
-        (post) => post.isPinned || post.isImportant || post.preservedBy
-      ),
+      recentPosts.filter((post) => post.isPinned || post.isImportant || post.preservedBy),
     [recentPosts]
   );
 
   const styles = makeStyles(c, isCompact);
-  const selectedInviteGroup = groupList.find((group) => group.id === inviteGroupId) ?? null;
+  const manageableGroups = groupList.filter((group) => group.currentRole === "Rep" || group.currentRole === "Staff");
+  const selectedInviteGroup = manageableGroups.find((group) => group.id === inviteGroupId) ?? null;
+
+  if (!authReady) {
+    return (
+      <SafeAreaView style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: c.bg }}>
+        <Text style={{ color: c.text }}>Loading your ClassVault account...</Text>
+      </SafeAreaView>
+    );
+  }
+
+  if (!session) {
+    return <AuthScreen />;
+  }
 
   const toggleTheme = () => setIsDark((value) => !value);
 
@@ -562,87 +482,157 @@ function ClassVaultApp() {
     setGroupManagementView(null);
   };
 
-  const createGroup = () => {
-    const name = newGroupName.trim();
-    if (!name) {
-      Alert.alert("Group name required", "Enter a name before creating your demo group.");
-      return;
+  const reloadGroups = async () => {
+    const accessToken = session?.access_token;
+    if (!accessToken) return;
+    setGroupsLoading(true);
+    try {
+      const [groupResponse, activity] = await Promise.all([
+        classVaultApi.getGroups(accessToken),
+        classVaultApi.getActivity(accessToken),
+      ]);
+      const nextGroups = groupResponse.groups.map((group) => toGroup(group, session.user.id));
+      const names = new Map(nextGroups.map((group) => [group.id, group]));
+      setGroupList(nextGroups);
+      setActivityMessages(activity.messages.map((message) => ({
+        ...message,
+        groupName: names.get(message.group_id)?.name ?? "Group",
+        groupColor: names.get(message.group_id)?.color ?? "#7557FF",
+      })));
+      setRecentMaterials(activity.materials.map((material) => ({
+        ...material,
+        groupName: names.get(material.group_id)?.name ?? "Group",
+      })));
+      setSupabaseStatus({ state: "connected" });
+      setApiError(null);
+    } catch (error) {
+      setApiError(error instanceof Error ? error.message : String(error));
+      setSupabaseStatus({ state: "error", message: "Could not load your ClassVault data." });
+      throw error;
+    } finally {
+      setGroupsLoading(false);
     }
-
-    const id = `demo-${Date.now()}`;
-    const description = newGroupDescription.trim();
-    const createdGroup: Group = {
-      id,
-      name,
-      code: `${newGroupType} • Demo`,
-      icon: "people",
-      color: "#7557FF",
-      description: description || "A locally created demo group.",
-      summary: description || "New demo group",
-      memberCount: 1,
-      repNames: [],
-      staffNames: [],
-      inviteLink: `https://classvault.demo/invite/${id}`,
-      messages: [],
-      materials: [],
-    };
-
-    setGroupList((currentGroups) => [createdGroup, ...currentGroups]);
-    setTab("My Classes");
-    setQuery("");
-    setNewGroupName("");
-    setNewGroupDescription("");
-    setNewGroupType("Subject Group");
-    closeGroupManagement();
-    Alert.alert("Demo group created", `${name} was added to your local group list.`);
   };
 
-  const joinDemoGroup = () => {
-    const invite = joinValue.trim();
-    if (!invite) {
-      Alert.alert("Invite details required", "Paste a demo invite link or enter a group code.");
+  const openGroup = async (group: Group) => {
+    setSelectedGroup(group);
+    setApiError(null);
+    const accessToken = session?.access_token;
+    if (!accessToken) return;
+    try {
+      const [messageResponse, materialResponse] = await Promise.all([
+        classVaultApi.getGroupMessages(accessToken, group.id),
+        classVaultApi.getGroupMaterials(accessToken, group.id),
+      ]);
+      const loadedGroup = {
+        ...group,
+        messages: messageResponse.messages.map(toMessage),
+        materials: materialResponse.materials.map(toMaterial),
+      };
+      setSelectedGroup(loadedGroup);
+      setGroupList((groups) => groups.map((item) => item.id === group.id ? loadedGroup : item));
+    } catch (error) {
+      setApiError(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const createGroup = async () => {
+    const name = newGroupName.trim();
+    if (!name) {
+      Alert.alert("Group name required", "Enter a name before creating the group.");
       return;
     }
+    setManagementBusy(true);
+    try {
+      if (!session?.access_token) throw new Error("Sign in to create a group.");
+      await classVaultApi.createGroup(session.access_token, {
+        name,
+        groupType: newGroupType === "Subject Group" ? "subject" : newGroupType === "Class Group" ? "class" : "general",
+        description: newGroupDescription.trim() || undefined,
+      });
+      await reloadGroups();
+      setTab("My Classes");
+      setQuery("");
+      setNewGroupName("");
+      setNewGroupDescription("");
+      closeGroupManagement();
+      Alert.alert("Group created", `${name} is now saved to your account.`);
+    } catch (error) {
+      Alert.alert("Could not create group", error instanceof Error ? error.message : String(error));
+    } finally {
+      setManagementBusy(false);
+    }
+  };
 
-    const id = `joined-demo-${Date.now()}`;
-    const joinedGroup: Group = {
-      id,
-      name: `Joined Demo Group ${groupList.length - officialGroups.length + 1}`,
-      code: "Joined • Demo",
-      icon: "people",
-      color: "#11B89A",
-      description: "This group was added locally to demonstrate the join flow.",
-      summary: "Frontend join demonstration",
-      memberCount: 1,
-      repNames: [],
-      staffNames: [],
-      inviteLink: `https://classvault.demo/invite/${id}`,
-      messages: [],
-      materials: [],
-    };
+  const joinGroup = async () => {
+    const enteredValue = joinValue.trim();
+    const code = enteredValue.match(/[a-f0-9]{64}$/i)?.[0] ?? enteredValue;
+    if (!code) {
+      Alert.alert("Invite code required", "Paste a real invite code.");
+      return;
+    }
+    setManagementBusy(true);
+    try {
+      if (!session?.access_token) throw new Error("Sign in to join a group.");
+      await classVaultApi.joinInvite(session.access_token, code);
+      await reloadGroups();
+      setTab("My Classes");
+      setQuery("");
+      setJoinValue("");
+      closeGroupManagement();
+      Alert.alert("Group joined", "The shared group is now in your group list.");
+    } catch (error) {
+      Alert.alert("Could not join group", error instanceof Error ? error.message : String(error));
+    } finally {
+      setManagementBusy(false);
+    }
+  };
 
-    setGroupList((currentGroups) => [joinedGroup, ...currentGroups]);
-    setTab("My Classes");
-    setQuery("");
-    setJoinValue("");
-    closeGroupManagement();
-    Alert.alert("Demo join complete", "A mock group was added locally. No real group was joined.");
+  const createGroupInvite = async () => {
+    if (!selectedInviteGroup || !session?.access_token) return;
+    setManagementBusy(true);
+    setInviteCode(null);
+    try {
+      const response = await classVaultApi.createInvite(session.access_token, selectedInviteGroup.id);
+      setInviteCode(response.invite.code);
+    } catch (error) {
+      Alert.alert("Could not create invite", error instanceof Error ? error.message : String(error));
+    } finally {
+      setManagementBusy(false);
+    }
+  };
+
+  const sendMessage = async () => {
+    const body = messageDraft.trim();
+    if (!selectedGroup || !body || !session?.access_token) return;
+    setMessageSending(true);
+    try {
+      await classVaultApi.createMessage(session.access_token, selectedGroup.id, body);
+      setMessageDraft("");
+      await openGroup(selectedGroup);
+      await reloadGroups();
+    } catch (error) {
+      Alert.alert("Could not send message", error instanceof Error ? error.message : String(error));
+    } finally {
+      setMessageSending(false);
+    }
   };
 
   const copyInviteLink = async (inviteLink: string) => {
     try {
       await Clipboard.setStringAsync(inviteLink);
-      Alert.alert("Demo link copied", "This sample link is for the frontend demonstration only.");
+      Alert.alert("Copied", "Invite code copied.");
     } catch (error) {
       Alert.alert("Copy failed", error instanceof Error ? error.message : "Could not copy the sample link.");
     }
   };
 
   const shareInviteLink = async (group: Group) => {
+    if (!inviteCode) return;
     try {
       await Share.share({
         title: `Invite to ${group.name}`,
-        message: `Demo invitation for ${group.name}: https://classvault.demo/invite/${group.id}`,
+        message: `Join ${group.name} on ClassVault with invite code: ${inviteCode}`,
       });
     } catch (error) {
       Alert.alert("Share failed", error instanceof Error ? error.message : "Could not share the sample link.");
@@ -650,7 +640,7 @@ function ClassVaultApp() {
   };
 
   const renderGroupCard = (group: Group) => (
-    <Pressable key={group.id} style={styles.subjectCard} onPress={() => setSelectedGroup(group)}>
+    <Pressable key={group.id} style={styles.subjectCard} onPress={() => void openGroup(group)}>
       <View style={[styles.subjectIcon, { backgroundColor: group.color }]}>
         <Ionicons name={group.icon} size={24} color="#FFFFFF" />
       </View>
@@ -683,12 +673,16 @@ function ClassVaultApp() {
             </View>
           </View>
           <View style={styles.headerActions}>
-            <Pressable style={styles.iconButton} onPress={toggleTheme} accessibilityLabel="Toggle theme">
-              <Ionicons name={isDark ? "sunny" : "moon"} size={21} color={isDark ? "#FFD36B" : "#5D49E8"} />
+            <Pressable
+              style={styles.iconButton}
+              onPress={toggleTheme}
+              accessibilityRole="button"
+              accessibilityLabel={isDark ? "Dark theme active. Switch to light mode" : "Light theme active. Switch to dark mode"}
+            >
+              <Ionicons name={isDark ? "moon" : "sunny"} size={21} color={c.accent} />
             </Pressable>
             <Pressable style={styles.iconButton} onPress={() => setShowNotifications(true)} accessibilityLabel="Notifications">
               <Ionicons name="notifications-outline" size={22} color={c.text} />
-              <View style={styles.notificationDot} />
             </Pressable>
             <Pressable style={styles.avatar} onPress={() => setShowProfile(true)}>
               <Ionicons name="person" size={19} color={c.text} />
@@ -696,6 +690,29 @@ function ClassVaultApp() {
           </View>
         </View>
 
+        <View
+          style={{
+            marginHorizontal: 20,
+            marginTop: 8,
+            paddingHorizontal: 12,
+            paddingVertical: 8,
+            borderRadius: 10,
+            backgroundColor: supabaseStatus.state === "connected" ? "#E6F7EE" : "#FFF3E0",
+          }}
+        >
+          <Text
+            style={{
+              color: supabaseStatus.state === "connected" ? "#137A45" : "#8A5200",
+              fontSize: 12,
+            }}
+          >
+            {groupsLoading
+              ? "Loading your groups and class activity..."
+              : supabaseStatus.state === "connected"
+                ? `Signed in as ${session.user.email ?? "ClassVault user"} • Live data`
+                : `Connection issue: ${apiError ?? (supabaseStatus.state === "error" ? supabaseStatus.message : "Connecting...")}`}
+          </Text>
+        </View>
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
           {activeScreen === "Classes" ? (
             <>
@@ -708,12 +725,12 @@ function ClassVaultApp() {
                   <Text style={styles.timetableSubtitle}>II BCA • Odd Semester 2026–2027</Text>
                 </View>
               </View>
-
               <View style={styles.rotationNote}>
                 <Ionicons name="information-circle-outline" size={17} color={c.accent} />
-                <Text style={styles.rotationNoteText}>Select the rotating timetable day manually. It is not tied to the weekday.</Text>
+                <Text style={styles.rotationNoteText}>
+                  Select the rotating timetable day manually. It is not tied to the weekday.
+                </Text>
               </View>
-
               <View style={styles.daySelector}>
                 {timetableDays.map((day) => (
                   <Pressable
@@ -721,40 +738,50 @@ function ClassVaultApp() {
                     accessibilityRole="button"
                     accessibilityState={{ selected: selectedDay === day }}
                     accessibilityLabel={`Select timetable Day ${day}`}
-                    style={[styles.dayOption, selectedDay === day && styles.dayOptionActive]}
                     onPress={() => {
                       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
                       setSelectedDay(day);
                     }}
+                    style={[
+                      styles.dayOption,
+                      selectedDay === day && styles.dayOptionActive,
+                    ]}
                   >
-                    <Text style={[styles.dayOptionLabel, selectedDay === day && styles.dayOptionLabelActive]}>Day {day}</Text>
+                    <Text
+                      style={[
+                        styles.dayOptionLabel,
+                        selectedDay === day && styles.dayOptionLabelActive,
+                      ]}
+                    >
+                      Day {day}
+                    </Text>
                     {selectedDay === day && <View style={styles.dayActiveIndicator} />}
                   </Pressable>
                 ))}
               </View>
-
               <View style={styles.selectedDayHeading}>
                 <View>
                   <Text style={styles.selectedDayTitle}>Day {selectedDay}</Text>
                   <Text style={styles.selectedDayHint}>Five teaching periods</Text>
                 </View>
                 <View style={styles.manualBadge}>
-                  <Ionicons name="hand-left-outline" size={12} color="#FFD36B" />
+                  <Ionicons name="hand-left-outline" size={13} color={c.accent} />
                   <Text style={styles.manualBadgeText}>Manual selection</Text>
                 </View>
               </View>
-
               <View style={styles.scheduleList}>
                 {timetablePeriods.map((period, index) => {
                   const subjectId = timetableRows[selectedDay][index];
-                  const subject = subjectId ? officialGroups.find((group) => group.id === subjectId) : undefined;
+                  const subject = subjectId
+                    ? timetableCourses.find((course) => course.id === subjectId)
+                    : undefined;
                   return (
                     <React.Fragment key={period.number}>
                       {index === 2 && (
                         <View style={styles.breakRow}>
                           <View style={styles.breakLine} />
                           <View style={styles.breakPill}>
-                            <Ionicons name="cafe-outline" size={14} color="#FFD36B" />
+                            <Ionicons name="cafe-outline" size={14} color={c.accent} />
                             <Text style={styles.breakText}>Break</Text>
                             <Text style={styles.breakTime}>10:40 AM – 11:00 AM</Text>
                           </View>
@@ -770,11 +797,13 @@ function ClassVaultApp() {
                         <View style={styles.periodContent}>
                           {subject && (
                             <>
-                            <Text style={styles.periodSubject} numberOfLines={2}>
-                              {subject.name}
-                            </Text>
-                            <Text style={styles.periodCode}>Subject code: {subject.subjectCode ?? "Not provided"}</Text>
-                            <Text style={styles.periodFaculty}>{subject.facultyName}</Text>
+                              <Text style={styles.periodSubject} numberOfLines={2}>
+                                {subject.name}
+                              </Text>
+                              <Text style={styles.periodCode}>
+                                Subject code: {subject.subjectCode ?? "Not provided"}
+                              </Text>
+                              <Text style={styles.periodFaculty}>{subject.facultyName}</Text>
                             </>
                           )}
                         </View>
@@ -789,9 +818,9 @@ function ClassVaultApp() {
           <View style={styles.collegeCard}>
             <View style={styles.collegeIcon}><Ionicons name="business" size={27} color="#FFFFFF" /></View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.collegeName}>SRM Trichy Arts and Science College</Text>
-              <Text style={styles.collegeCourse}>II BCA • Computer Applications</Text>
-              <Text style={styles.collegeMeta}>Odd Semester • 2026–2027</Text>
+              <Text style={styles.collegeName}>Your ClassVault groups</Text>
+              <Text style={styles.collegeCourse}>{session.user.email}</Text>
+              <Text style={styles.collegeMeta}>{groupList.length} groups available</Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color={c.muted} />
           </View>
@@ -832,10 +861,13 @@ function ClassVaultApp() {
           </View>
 
           {tab === "My Classes" && visibleGroups.map(renderGroupCard)}
+          {!groupsLoading && tab === "My Classes" && visibleGroups.length === 0 && (
+            <Text style={styles.empty}>No groups yet. Create a group or join one with an invite code.</Text>
+          )}
           {tab === "Recent" && (
             <View style={styles.feedList}>
               {recentPosts.slice(0, 4).map((post) => (
-                <Pressable key={post.id} style={styles.feedCard} onPress={() => setSelectedGroup(groupList.find((group) => group.id === post.groupId) ?? null)}>
+                <Pressable key={post.id} style={styles.feedCard} onPress={() => { const group = groupList.find((item) => item.id === post.groupId); if (group) void openGroup(group); }}>
                   <View style={[styles.feedTag, { backgroundColor: post.groupColor }]}>
                     <Text style={styles.feedTagText}>{post.groupName}</Text>
                   </View>
@@ -849,7 +881,7 @@ function ClassVaultApp() {
           {tab === "Important" && (
             <View style={styles.feedList}>
               {importantPosts.slice(0, 4).map((post) => (
-                <Pressable key={post.id} style={styles.feedCard} onPress={() => setSelectedGroup(groupList.find((group) => group.id === post.groupId) ?? null)}>
+                <Pressable key={post.id} style={styles.feedCard} onPress={() => { const group = groupList.find((item) => item.id === post.groupId); if (group) void openGroup(group); }}>
                   <View style={[styles.feedTag, { backgroundColor: post.groupColor }]}>
                     <Text style={styles.feedTagText}>{post.groupName}</Text>
                   </View>
@@ -861,33 +893,36 @@ function ClassVaultApp() {
             </View>
           )}
 
-          {visibleGroups.length === 0 && <Text style={styles.empty}>No subjects match your search.</Text>}
+          {query.trim().length > 0 && visibleGroups.length === 0 && <Text style={styles.empty}>No groups match your search.</Text>}
 
           <View style={styles.sectionTitleRow}>
             <Text style={styles.sectionTitle}>Recently shared materials</Text>
-            <Text style={styles.count}>Demo items</Text>
+            <Text style={styles.count}>{recentMaterials.length} items</Text>
           </View>
 
           <View style={styles.miniMaterialsList}>
-            {groupList.flatMap((group) =>
-              group.materials.slice(0, 1).map((material) => (
+            {recentMaterials.map((material) => {
+              const type = material.material_type.toUpperCase() as MaterialType;
+              const tones = getMaterialTone(type, isDark);
+              return (
                 <Pressable key={material.id} style={styles.materialMini} onPress={() => Linking.openURL(material.url)}>
-                  <View style={[styles.materialBadge, { backgroundColor: getMaterialTone(material.type).bg }]}>
-                    <Text style={[styles.materialBadgeText, { color: getMaterialTone(material.type).text }]}>{material.type}</Text>
+                  <View style={[styles.materialBadge, { backgroundColor: tones.bg }]}>
+                    <Text style={[styles.materialBadgeText, { color: tones.text }]}>{type}</Text>
                   </View>
                   <View style={styles.materialMiniTextWrap}>
                     <Text style={styles.materialMiniTitle}>{material.title}</Text>
-                    <Text style={styles.materialMiniMeta}>{group.name} • {material.uploadedBy}</Text>
+                    <Text style={styles.materialMiniMeta}>{material.groupName} • {displayProfile(material.profiles)}</Text>
                   </View>
                 </Pressable>
-              ))
-            )}
+              );
+            })}
+            {!groupsLoading && recentMaterials.length === 0 && <Text style={styles.empty}>No materials have been shared yet.</Text>}
           </View>
 
           <View style={styles.note}>
             <Ionicons name="information-circle-outline" size={18} color={c.muted} />
             <Text style={styles.noteText}>
-              Demo prototype only. Login, group invites, message expiry, and staff permission checks are simulated in the UI and must be enforced by a backend for production.
+              Group, message, and material data are loaded from your account. Rep and staff permissions are enforced by the backend.
             </Text>
           </View>
             </>
@@ -934,13 +969,25 @@ function ClassVaultApp() {
                 </View>
                 <Text style={styles.modalTitle}>{selectedGroup.name}</Text>
                 <Text style={styles.modalSubtitle}>{selectedGroup.description}</Text>
+                {!!apiError && <Text style={{ color: "#BA2525", fontSize: 12, marginTop: 8 }}>{apiError}</Text>}
 
                 <Pressable
                   style={styles.actionBar}
-                  onPress={() => Linking.openURL(selectedGroup.inviteLink)}
+                  onPress={() => {
+                    if (selectedGroup.currentRole === "Student") {
+                      Alert.alert("Rep or staff only", "Ask a group rep or staff member to create an invite.");
+                      return;
+                    }
+                    setInviteGroupId(selectedGroup.id);
+                    setInviteCode(null);
+                    setSelectedGroup(null);
+                    setGroupManagementView("invite");
+                  }}
                 >
                   <Ionicons name="link-outline" size={18} color="#FFFFFF" />
-                  <Text style={styles.actionBarText}>Open invite link</Text>
+                  <Text style={styles.actionBarText}>
+                    {selectedGroup.currentRole === "Student" ? "Invite (ask a rep or staff)" : "Create invite code"}
+                  </Text>
                 </Pressable>
 
                 <View style={styles.groupStats}>
@@ -959,21 +1006,22 @@ function ClassVaultApp() {
                 </View>
 
                 <Text style={styles.membersHeading}>Members and roles</Text>
-                {[...selectedGroup.repNames, ...selectedGroup.staffNames, "Student A", "Student B"].map((member, index) => (
-                  <View key={`${member}-${index}`} style={styles.memberRow}>
+                {(selectedGroup.members ?? []).map((member, index) => (
+                  <View key={`${member.name}-${index}`} style={styles.memberRow}>
                     <View style={styles.memberAvatar}>
-                      <Ionicons name={index < selectedGroup.repNames.length + selectedGroup.staffNames.length ? "person" : "person-outline"} size={17} color={c.text} />
+                      <Ionicons name="person" size={17} color={c.text} />
                     </View>
-                    <Text style={styles.memberName}>{member}</Text>
-                    {index < selectedGroup.repNames.length && <Text style={styles.role}>REP</Text>}
-                    {index >= selectedGroup.repNames.length && index < selectedGroup.repNames.length + selectedGroup.staffNames.length && <Text style={styles.role}>STAFF</Text>}
-                    {index >= selectedGroup.repNames.length + selectedGroup.staffNames.length && <Text style={styles.role}>STUDENT</Text>}
+                    <Text style={styles.memberName}>{member.name}</Text>
+                    <Text style={styles.role}>{member.role.toUpperCase()}</Text>
                   </View>
                 ))}
+                {(selectedGroup.members ?? []).length === 0 && (
+                  <Text style={styles.empty}>Member details are not available.</Text>
+                )}
 
                 <Text style={styles.membersHeading}>Materials</Text>
                 {selectedGroup.materials.map((material) => {
-                  const tones = getMaterialTone(material.type);
+                  const tones = getMaterialTone(material.type, isDark);
                   return (
                     <Pressable key={material.id} style={styles.materialCard} onPress={() => Linking.openURL(material.url)}>
                       <View style={[styles.materialChip, { backgroundColor: tones.bg }]}>
@@ -987,6 +1035,25 @@ function ClassVaultApp() {
                 })}
 
                 <Text style={styles.membersHeading}>Recent activity and retention</Text>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                  <TextInput
+                    value={messageDraft}
+                    onChangeText={setMessageDraft}
+                    placeholder="Write a message"
+                    placeholderTextColor={c.muted}
+                    style={[styles.managementInput, { flex: 1, marginBottom: 0 }]}
+                    maxLength={5000}
+                  />
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Send message"
+                    disabled={!messageDraft.trim() || messageSending}
+                    onPress={() => void sendMessage()}
+                    style={[styles.actionBar, { marginTop: 0, paddingHorizontal: 14, opacity: !messageDraft.trim() || messageSending ? 0.55 : 1 }]}
+                  >
+                    <Ionicons name="send" size={17} color="#FFFFFF" />
+                  </Pressable>
+                </View>
                 {selectedGroup.messages.map((message) => (
                   <View key={message.id} style={styles.messageCard}>
                     <View style={styles.messageLine}>
@@ -1007,7 +1074,7 @@ function ClassVaultApp() {
                 ))}
 
                 <Text style={styles.modalFootnote}>
-                  Demo notice: class permissions and expiry rules are shown for prototype purposes only. Backend validation is required in production.
+                  Student messages expire after 24 hours. Messages and permissions are managed by the ClassVault API.
                 </Text>
               </>
             )}
@@ -1023,17 +1090,18 @@ function ClassVaultApp() {
             </Pressable>
             <View style={styles.profileIcon}><Ionicons name="notifications" size={30} color="#7557FF" /></View>
             <Text style={styles.modalTitle}>Notifications</Text>
-            <Text style={styles.modalSubtitle}>Prototype activity feed</Text>
+            <Text style={styles.modalSubtitle}>Recent activity in your groups</Text>
             <View style={styles.notificationList}>
-              {notifications.map((item) => (
+              {activityMessages.slice(0, 10).map((item) => (
                 <View key={item.id} style={styles.notificationItem}>
                   <View style={styles.notificationDotLarge} />
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.notificationTitle}>{item.title}</Text>
-                    <Text style={styles.notificationBody}>{item.detail}</Text>
+                    <Text style={styles.notificationTitle}>{item.groupName} • {displayProfile(item.profiles)}</Text>
+                    <Text style={styles.notificationBody}>{item.body}</Text>
                   </View>
                 </View>
               ))}
+              {activityMessages.length === 0 && <Text style={styles.empty}>No recent group activity.</Text>}
             </View>
           </View>
         </View>
@@ -1047,11 +1115,13 @@ function ClassVaultApp() {
             </Pressable>
             <View style={styles.profileIcon}><Ionicons name="person" size={30} color="#7557FF" /></View>
             <Text style={styles.modalTitle}>Profile & settings</Text>
-            <Text style={styles.modalSubtitle}>Student demo account • Demo mode</Text>
+            <Text style={styles.modalSubtitle}>{session.user.email ?? "ClassVault account"}</Text>
 
             <Pressable style={styles.primaryButton} onPress={() => { setShowProfile(false); toggleTheme(); }}>
-              <Ionicons name={isDark ? "sunny" : "moon"} size={19} color="#FFFFFF" />
-              <Text style={styles.primaryButtonText}>Switch to {isDark ? "Light" : "Dark"} mode</Text>
+              <Ionicons name={isDark ? "moon" : "sunny"} size={19} color="#FFFFFF" />
+              <Text style={styles.primaryButtonText}>
+                {isDark ? "Dark mode · Switch to Light" : "Light mode · Switch to Dark"}
+              </Text>
             </Pressable>
 
             <Pressable style={styles.secondaryButton} onPress={() => { setShowProfile(false); setShowNotifications(true); }}>
@@ -1059,7 +1129,18 @@ function ClassVaultApp() {
               <Text style={styles.secondaryButtonText}>Open notifications</Text>
             </Pressable>
 
-            <Text style={styles.profileNote}>Protected Staff and Rep actions must be validated in a backend before production release.</Text>
+            <Pressable
+              style={styles.secondaryButton}
+              onPress={() => {
+                setShowProfile(false);
+                void supabase?.auth.signOut().then(({ error }) => {
+                  if (error) Alert.alert("Could not sign out", error.message);
+                });
+              }}
+            >
+              <Ionicons name="log-out-outline" size={18} color={c.text} />
+              <Text style={styles.secondaryButtonText}>Sign out</Text>
+            </Pressable>
           </View>
         </View>
       </Modal>
@@ -1116,14 +1197,15 @@ function ClassVaultApp() {
                     </View>
                     <View style={styles.managementOptionText}>
                       <Text style={styles.managementOptionTitle}>Create a Group</Text>
-                      <Text style={styles.managementOptionDescription}>Set up a group in this demo</Text>
+                      <Text style={styles.managementOptionDescription}>Create a group saved to your account</Text>
                     </View>
                     <Ionicons name="chevron-forward" size={18} color={c.muted} />
                   </Pressable>
                   <Pressable
                     style={styles.managementOption}
                     onPress={() => {
-                      setInviteGroupId(groupList[0]?.id ?? null);
+                      setInviteGroupId(manageableGroups[0]?.id ?? null);
+                      setInviteCode(null);
                       setGroupManagementView("invite");
                     }}
                   >
@@ -1132,7 +1214,7 @@ function ClassVaultApp() {
                     </View>
                     <View style={styles.managementOptionText}>
                       <Text style={styles.managementOptionTitle}>Invite Group Link</Text>
-                      <Text style={styles.managementOptionDescription}>Copy or share a sample link</Text>
+                      <Text style={styles.managementOptionDescription}>Generate an expiring invite code</Text>
                     </View>
                     <Ionicons name="chevron-forward" size={18} color={c.muted} />
                   </Pressable>
@@ -1146,13 +1228,13 @@ function ClassVaultApp() {
                     </View>
                     <Ionicons name="chevron-forward" size={18} color={c.muted} />
                   </Pressable>
-                  <Text style={styles.managementDemoNote}>Frontend demo only • No real groups or invite links are created or shared.</Text>
+                  <Text style={styles.managementDemoNote}>Groups and invite codes are stored and validated by the backend.</Text>
                 </>
               )}
 
               {groupManagementView === "create" && (
                 <>
-                  <Text style={styles.managementSubtitle}>Add a temporary group to this device’s demo list.</Text>
+                  <Text style={styles.managementSubtitle}>Create a group that is shared with your account.</Text>
                   <Text style={styles.inputLabel}>Group Name *</Text>
                   <TextInput
                     value={newGroupName}
@@ -1186,34 +1268,34 @@ function ClassVaultApp() {
                       </Pressable>
                     ))}
                   </View>
-                  <Pressable style={styles.managementPrimaryButton} onPress={createGroup}>
+                  <Pressable disabled={managementBusy} style={[styles.managementPrimaryButton, managementBusy && { opacity: 0.6 }]} onPress={() => void createGroup()}>
                     <Ionicons name="people" size={18} color="#FFFFFF" />
-                    <Text style={styles.managementPrimaryText}>Create Group</Text>
+                    <Text style={styles.managementPrimaryText}>{managementBusy ? "Creating..." : "Create Group"}</Text>
                   </Pressable>
                   <Pressable style={styles.managementCancelButton} onPress={closeGroupManagement}>
                     <Text style={styles.managementCancelText}>Cancel</Text>
                   </Pressable>
-                  <Text style={styles.managementDemoNote}>This group exists only in local app state and resets when the app restarts.</Text>
+                  <Text style={styles.managementDemoNote}>The group creator is added as its first rep.</Text>
                 </>
               )}
 
               {groupManagementView === "invite" && (
                 <>
-                  <Text style={styles.managementSubtitle}>Select a group to preview its sample invitation link.</Text>
-                  {groupList.length === 0 ? (
+                  <Text style={styles.managementSubtitle}>Create a secure invite code for a group you manage.</Text>
+                  {manageableGroups.length === 0 ? (
                     <View style={styles.managementEmpty}>
                       <Ionicons name="people-outline" size={30} color={c.muted} />
                       <Text style={styles.managementEmptyTitle}>No groups yet</Text>
-                      <Text style={styles.managementEmptyText}>Create a demo group first to preview an invite link.</Text>
+                      <Text style={styles.managementEmptyText}>You need to be a rep or staff member to create invites.</Text>
                     </View>
                   ) : (
                     <>
                       <View style={styles.inviteGroupList}>
-                        {groupList.map((group) => (
+                        {manageableGroups.map((group) => (
                           <Pressable
                             key={group.id}
                             style={[styles.inviteGroupOption, inviteGroupId === group.id && styles.inviteGroupOptionActive]}
-                            onPress={() => setInviteGroupId(group.id)}
+                            onPress={() => { setInviteGroupId(group.id); setInviteCode(null); }}
                           >
                             <View style={[styles.inviteGroupIcon, { backgroundColor: group.color }]}>
                               <Ionicons name={group.icon} size={16} color="#FFFFFF" />
@@ -1225,53 +1307,56 @@ function ClassVaultApp() {
                       </View>
                       {selectedInviteGroup && (
                         <>
-                          <Text style={styles.inputLabel}>Sample invitation link</Text>
+                          <Text style={styles.inputLabel}>Invite code</Text>
                           <View style={styles.inviteLinkBox}>
                             <Ionicons name="link-outline" size={17} color={c.accent} />
                             <Text style={styles.inviteLinkText} selectable>
-                              https://classvault.demo/invite/{selectedInviteGroup.id}
+                              {inviteCode ?? "Create a code to share"}
                             </Text>
                           </View>
                           <Pressable
-                            style={styles.managementPrimaryButton}
-                            onPress={() => void copyInviteLink(`https://classvault.demo/invite/${selectedInviteGroup.id}`)}
+                            disabled={managementBusy}
+                            style={[styles.managementPrimaryButton, managementBusy && { opacity: 0.6 }]}
+                            onPress={() => inviteCode ? void copyInviteLink(inviteCode) : void createGroupInvite()}
                           >
-                            <Ionicons name="copy-outline" size={18} color="#FFFFFF" />
-                            <Text style={styles.managementPrimaryText}>Copy Link</Text>
+                            <Ionicons name={inviteCode ? "copy-outline" : "key-outline"} size={18} color="#FFFFFF" />
+                            <Text style={styles.managementPrimaryText}>
+                              {managementBusy ? "Working..." : inviteCode ? "Copy Invite Code" : "Generate Invite Code"}
+                            </Text>
                           </Pressable>
-                          <Pressable style={styles.managementCancelButton} onPress={() => void shareInviteLink(selectedInviteGroup)}>
+                          {inviteCode && <Pressable style={styles.managementCancelButton} onPress={() => void shareInviteLink(selectedInviteGroup)}>
                             <Ionicons name="share-social-outline" size={17} color={c.text} />
-                            <Text style={styles.managementCancelText}>Share Link</Text>
-                          </Pressable>
+                            <Text style={styles.managementCancelText}>Share Invite Code</Text>
+                          </Pressable>}
                         </>
                       )}
                     </>
                   )}
-                  <Text style={styles.managementDemoNote}>Demo link only • It does not validate invitations or open a real group.</Text>
+                  <Text style={styles.managementDemoNote}>Codes expire after 7 days. Only reps and staff can generate them.</Text>
                 </>
               )}
 
               {groupManagementView === "join" && (
                 <>
-                  <Text style={styles.managementSubtitle}>Enter any demo code or sample link to preview the join flow.</Text>
+                  <Text style={styles.managementSubtitle}>Enter the invite code shared by a group rep or staff member.</Text>
                   <Text style={styles.inputLabel}>Group invite link or code</Text>
                   <TextInput
                     value={joinValue}
                     onChangeText={setJoinValue}
-                    placeholder="Paste a link or enter a group code"
+                    placeholder="Paste the invite code"
                     placeholderTextColor={c.muted}
                     style={styles.managementInput}
                     autoCapitalize="none"
                     autoCorrect={false}
                   />
-                  <Pressable style={styles.managementPrimaryButton} onPress={joinDemoGroup}>
+                  <Pressable disabled={managementBusy} style={[styles.managementPrimaryButton, managementBusy && { opacity: 0.6 }]} onPress={() => void joinGroup()}>
                     <Ionicons name="person-add" size={18} color="#FFFFFF" />
-                    <Text style={styles.managementPrimaryText}>Join Group</Text>
+                    <Text style={styles.managementPrimaryText}>{managementBusy ? "Joining..." : "Join Group"}</Text>
                   </Pressable>
                   <Pressable style={styles.managementCancelButton} onPress={closeGroupManagement}>
                     <Text style={styles.managementCancelText}>Cancel</Text>
                   </Pressable>
-                  <Text style={styles.managementDemoNote}>Join is simulated locally. No invitation is validated and no shared group is joined.</Text>
+                  <Text style={styles.managementDemoNote}>Invalid, expired, and exhausted invite codes are rejected by the backend.</Text>
                 </>
               )}
             </ScrollView>
@@ -1287,6 +1372,7 @@ function makeStyles(c: typeof dark, isCompact: boolean) {
     safe: { flex: 1, backgroundColor: c.bg },
     page: { flex: 1, backgroundColor: c.bg },
     header: {
+      backgroundColor: c.nav,
       paddingHorizontal: isCompact ? 14 : 18,
       paddingTop: isCompact ? 5 : 8,
       paddingBottom: isCompact ? 8 : 11,
@@ -1303,15 +1389,15 @@ function makeStyles(c: typeof dark, isCompact: boolean) {
     notificationDot: { position: "absolute", right: 7, top: 6, width: 6, height: 6, borderRadius: 3, backgroundColor: "#FF4D83" },
     avatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: c.subcard, borderWidth: 1, borderColor: c.border, alignItems: "center", justifyContent: "center" },
     scrollContent: { paddingHorizontal: isCompact ? 14 : 18, paddingBottom: 18 },
-    collegeCard: { flexDirection: "row", alignItems: "center", gap: 9, padding: isCompact ? 9 : 11, backgroundColor: c.surface, borderWidth: 1, borderColor: c.border, borderRadius: 16, marginBottom: 12 },
+    collegeCard: { flexDirection: "row", alignItems: "center", gap: 9, padding: isCompact ? 9 : 11, backgroundColor: c.surface, borderWidth: 1, borderColor: c.border, borderRadius: 16, marginBottom: 12, ...c.shadow },
     collegeIcon: { width: 36, height: 36, borderRadius: 11, backgroundColor: "#4E73E8", alignItems: "center", justifyContent: "center" },
     collegeName: { color: c.text, fontSize: 12, fontWeight: "800", lineHeight: 17 },
     collegeCourse: { color: c.muted, fontSize: 11, marginTop: 2 },
     collegeMeta: { color: c.accent, fontSize: 10, marginTop: 2, fontWeight: "600" },
     searchRow: { flexDirection: "row", gap: 8, marginBottom: 12 },
-    searchBox: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: c.search, borderRadius: 13, borderWidth: 1, borderColor: c.border, paddingHorizontal: 11, height: isCompact ? 40 : 43 },
+    searchBox: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: c.search, borderRadius: 13, borderWidth: 1, borderColor: c.border, paddingHorizontal: 11, height: isCompact ? 40 : 43, ...c.shadow },
     searchInput: { flex: 1, color: c.text, fontSize: 12.5, paddingVertical: 0 },
-    filterButton: { width: isCompact ? 40 : 43, height: isCompact ? 40 : 43, borderRadius: 13, backgroundColor: c.surface, borderWidth: 1, borderColor: c.border, alignItems: "center", justifyContent: "center" },
+    filterButton: { width: isCompact ? 40 : 43, height: isCompact ? 40 : 43, borderRadius: 13, backgroundColor: c.surface, borderWidth: 1, borderColor: c.border, alignItems: "center", justifyContent: "center", ...c.shadow },
     tabs: { flexDirection: "row", justifyContent: "space-between", marginBottom: 12, borderBottomWidth: 1, borderBottomColor: c.border },
     tab: { paddingHorizontal: 6, paddingBottom: 8, flexDirection: "row", alignItems: "center", gap: 4, borderBottomWidth: 2, borderBottomColor: "transparent" },
     activeTab: { borderBottomColor: c.accent },
@@ -1321,18 +1407,18 @@ function makeStyles(c: typeof dark, isCompact: boolean) {
     sectionTitleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10 },
     sectionTitle: { color: c.text, fontSize: 14, fontWeight: "800" },
     count: { color: c.muted, fontSize: 10 },
-    subjectCard: { flexDirection: "row", alignItems: "center", gap: 9, padding: 10, borderRadius: 15, backgroundColor: c.card, borderWidth: 1, borderColor: c.border, marginBottom: 8, minHeight: 94 },
+    subjectCard: { flexDirection: "row", alignItems: "center", gap: 9, padding: 10, borderRadius: 15, backgroundColor: c.card, borderWidth: 1, borderColor: c.border, marginBottom: 8, minHeight: 94, ...c.shadow },
     subjectIcon: { width: 42, height: 42, borderRadius: 13, alignItems: "center", justifyContent: "center" },
     subjectInfo: { flex: 1, minWidth: 0 },
     subjectTitleRow: { flexDirection: "row", alignItems: "flex-start", gap: 5 },
     subjectName: { color: c.text, fontWeight: "800", fontSize: 12, flex: 1, lineHeight: 16 },
-    subjectShortCode: { color: "#FFD36B", fontSize: 8, fontWeight: "900", backgroundColor: c.subcard, overflow: "hidden", borderRadius: 6, paddingHorizontal: 5, paddingVertical: 3 },
+    subjectShortCode: { color: c.accent, fontSize: 8, fontWeight: "900", backgroundColor: c.subcard, overflow: "hidden", borderRadius: 6, paddingHorizontal: 5, paddingVertical: 3 },
     subjectCode: { color: c.muted, fontSize: 9, marginTop: 3 },
     subjectFaculty: { color: c.text, fontSize: 9, marginTop: 2, fontWeight: "600" },
     subjectType: { color: c.muted, fontSize: 8, marginTop: 2 },
     subjectRight: { alignItems: "flex-end", justifyContent: "center", gap: 4, minWidth: 35 },
     time: { color: c.muted, fontSize: 8 },
-    timetableHeading: { flexDirection: "row", alignItems: "center", gap: 11, padding: 14, borderRadius: 17, backgroundColor: c.surface, borderWidth: 1, borderColor: c.border, marginBottom: 10 },
+    timetableHeading: { flexDirection: "row", alignItems: "center", gap: 11, padding: 14, borderRadius: 17, backgroundColor: c.surface, borderWidth: 1, borderColor: c.border, marginBottom: 10, ...c.shadow },
     timetableHeadingIcon: { width: 42, height: 42, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: "#4E73E8" },
     timetableHeadingText: { flex: 1, minWidth: 0 },
     timetableTitle: { color: c.text, fontSize: 16, fontWeight: "800" },
@@ -1341,35 +1427,35 @@ function makeStyles(c: typeof dark, isCompact: boolean) {
     rotationNoteText: { color: c.muted, fontSize: 10, lineHeight: 15, flex: 1 },
     daySelector: { flexDirection: "row", gap: 5, marginBottom: 16 },
     dayOption: { flex: 1, minWidth: 0, minHeight: 55, alignItems: "center", justifyContent: "center", borderRadius: 13, backgroundColor: c.surface, borderWidth: 1, borderColor: c.border, paddingHorizontal: 1 },
-    dayOptionActive: { backgroundColor: "#17345F", borderColor: "#FFD36B", borderWidth: 1.5 },
+    dayOptionActive: { backgroundColor: c.subcard, borderColor: c.accent, borderWidth: 1.5 },
     dayOptionLabel: { color: c.muted, fontSize: 9, fontWeight: "700" },
-    dayOptionLabelActive: { color: "#FFD36B", fontWeight: "900" },
-    dayActiveIndicator: { width: 5, height: 5, borderRadius: 3, backgroundColor: "#FFD36B", marginTop: 5 },
+    dayOptionLabelActive: { color: c.accent, fontWeight: "900" },
+    dayActiveIndicator: { width: 5, height: 5, borderRadius: 3, backgroundColor: c.accent, marginTop: 5 },
     selectedDayHeading: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10 },
     selectedDayTitle: { color: c.text, fontSize: 17, fontWeight: "800" },
     selectedDayHint: { color: c.muted, fontSize: 10, marginTop: 2 },
     manualBadge: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: c.subcard, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 6 },
-    manualBadgeText: { color: "#FFD36B", fontSize: 8, fontWeight: "700" },
+    manualBadgeText: { color: c.accent, fontSize: 8, fontWeight: "700" },
     scheduleList: { gap: 8, paddingBottom: 12 },
-    periodCard: { flexDirection: "row", alignItems: "stretch", gap: 10, backgroundColor: c.card, borderWidth: 1, borderColor: c.border, borderRadius: 15, padding: 11, minHeight: 66 },
+    periodCard: { flexDirection: "row", alignItems: "stretch", gap: 10, backgroundColor: c.card, borderWidth: 1, borderColor: c.border, borderRadius: 15, padding: 11, minHeight: 66, ...c.shadow },
     periodTimeline: { width: 94, justifyContent: "center" },
     periodNumber: { color: c.accent, fontSize: 9, fontWeight: "900", marginBottom: 4 },
     periodTime: { color: c.muted, fontSize: 8, lineHeight: 13 },
     periodDivider: { width: 1, backgroundColor: c.border },
     periodContent: { flex: 1, minWidth: 0, justifyContent: "center" },
     periodSubject: { flex: 1, color: c.text, fontSize: 11, fontWeight: "800", lineHeight: 15 },
-    periodCode: { color: "#FFD36B", fontSize: 9, fontWeight: "700", marginTop: 4 },
+    periodCode: { color: c.accent, fontSize: 9, fontWeight: "700", marginTop: 4 },
     periodFaculty: { color: c.muted, fontSize: 9, marginTop: 3 },
     breakRow: { flexDirection: "row", alignItems: "center", gap: 7, paddingVertical: 3 },
     breakLine: { flex: 1, height: 1, backgroundColor: c.border },
     breakPill: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: c.subcard, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 6 },
-    breakText: { color: "#FFD36B", fontSize: 9, fontWeight: "800" },
+    breakText: { color: c.accent, fontSize: 9, fontWeight: "800" },
     breakTime: { color: c.muted, fontSize: 8 },
     empty: { textAlign: "center", color: c.muted, padding: 24 },
     note: { flexDirection: "row", gap: 8, alignItems: "center", padding: 12, marginTop: 3 },
     noteText: { color: c.muted, fontSize: 10, flex: 1, lineHeight: 15 },
     feedList: { gap: 10 },
-    feedCard: { backgroundColor: c.card, borderWidth: 1, borderColor: c.border, borderRadius: 18, padding: 12 },
+    feedCard: { backgroundColor: c.card, borderWidth: 1, borderColor: c.border, borderRadius: 18, padding: 12, ...c.shadow },
     feedTag: { alignSelf: "flex-start", borderRadius: 999, paddingHorizontal: 8, paddingVertical: 5, marginBottom: 8 },
     feedTagText: { color: "#FFFFFF", fontSize: 9, fontWeight: "800" },
     feedAuthor: { color: c.text, fontSize: 12, fontWeight: "700" },
@@ -1397,7 +1483,7 @@ function makeStyles(c: typeof dark, isCompact: boolean) {
     navLabel: { color: c.muted, fontSize: 9, fontWeight: "500" },
     navActive: { color: c.accent, fontWeight: "700", opacity: 1 },
     modalBackdrop: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.55)" },
-    modalSheet: { backgroundColor: c.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 22, paddingTop: 12, paddingBottom: 30, maxHeight: "88%" },
+    modalSheet: { backgroundColor: c.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 22, paddingTop: 12, paddingBottom: 30, maxHeight: "88%", ...c.shadow },
     modalHandle: { alignSelf: "center", width: 42, height: 4, borderRadius: 3, backgroundColor: c.muted, opacity: 0.5, marginBottom: 12 },
     modalClose: { position: "absolute", right: 17, top: 15, zIndex: 2, padding: 5 },
     modalTitle: { color: c.text, fontSize: 21, fontWeight: "800", textAlign: "center", marginTop: 13 },
@@ -1462,7 +1548,7 @@ function makeStyles(c: typeof dark, isCompact: boolean) {
     inviteGroupName: { flex: 1, color: c.text, fontSize: 11, fontWeight: "700" },
     inviteLinkBox: { flexDirection: "row", alignItems: "center", gap: 8, minHeight: 44, borderWidth: 1, borderColor: c.border, borderRadius: 12, backgroundColor: c.search, paddingHorizontal: 10, paddingVertical: 8 },
     inviteLinkText: { flex: 1, color: c.text, fontSize: 10 },
-    profileSheet: { alignSelf: "center", width: "88%", backgroundColor: c.surface, borderRadius: 26, padding: 24, alignItems: "center", marginBottom: "55%" },
+    profileSheet: { alignSelf: "center", width: "88%", backgroundColor: c.surface, borderRadius: 26, padding: 24, alignItems: "center", marginBottom: "55%", ...c.shadow },
     profileIcon: { width: 62, height: 62, borderRadius: 22, backgroundColor: c.subcard, alignItems: "center", justifyContent: "center", marginTop: 18 },
     primaryButton: { flexDirection: "row", gap: 9, alignItems: "center", justifyContent: "center", backgroundColor: c.accent, borderRadius: 14, paddingVertical: 13, paddingHorizontal: 17, marginTop: 22, width: "100%" },
     primaryButtonText: { color: "#FFFFFF", fontSize: 13, fontWeight: "800" },
