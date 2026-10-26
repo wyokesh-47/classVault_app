@@ -5,9 +5,6 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
-    "splash": {
-      "backgroundColor": "#080F25"
-    },
     "android": {
       "package": "com.classvault.studentapp"
     },
@@ -15,7 +12,21 @@
       "bundleIdentifier": "com.classvault.studentapp"
     },
     "plugins": [
-      "expo-status-bar"
-    ]
+      "expo-status-bar",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#080F25",
+          "image": "./assets/classvault-splash.png",
+          "imageWidth": 128
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "2301e607-7371-4bc5-a269-b1a38a158139"
+      }
+    },
+    "owner": "yokesh_27"
   }
 }

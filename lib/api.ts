@@ -1,4 +1,6 @@
-const apiUrl = process.env.EXPO_PUBLIC_API_URL?.replace(/\/+$/, "");
+import { getPublicConfig } from "./public-config";
+
+const apiUrl = getPublicConfig("EXPO_PUBLIC_API_URL", process.env.EXPO_PUBLIC_API_URL)?.replace(/\/+$/, "");
 
 export type ApiGroup = {
   id: string;
@@ -61,7 +63,7 @@ export class ApiError extends Error {
 
 async function request<T>(path: string, accessToken: string, options: RequestInit = {}): Promise<T> {
   if (!apiUrl) {
-    throw new ApiError("Set EXPO_PUBLIC_API_URL in the app .env file.", 0);
+    throw new ApiError("Set EXPO_PUBLIC_API_URL in the Expo .env file or Hugging Face Space Variables.", 0);
   }
 
   let response: Response;
@@ -76,7 +78,10 @@ async function request<T>(path: string, accessToken: string, options: RequestIni
       },
     });
   } catch {
-    throw new ApiError(`Cannot reach the ClassVault API at ${apiUrl}. Check that the backend is running and EXPO_PUBLIC_API_URL is reachable from this device.`, 0);
+    throw new ApiError(
+      "The ClassVault backend is temporarily unavailable or unreachable. The Hugging Face Space may be paused or offline. Please try again later.",
+      0
+    );
   }
 
   const payload: unknown = await response.json().catch(() => null);
@@ -85,6 +90,12 @@ async function request<T>(path: string, accessToken: string, options: RequestIni
       typeof payload === "object" && payload !== null && "error" in payload
         ? (payload as { error?: { message?: string } }).error?.message
         : undefined;
+    if (response.status >= 500 && !message) {
+      throw new ApiError(
+        `The ClassVault backend is temporarily unavailable (HTTP ${response.status}). The Hugging Face Space may be paused. Please try again after it is running.`,
+        response.status
+      );
+    }
     throw new ApiError(message || `The API request failed (${response.status}).`, response.status);
   }
 
